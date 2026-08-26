@@ -35,6 +35,9 @@ jobs:
       - name: Install pinned Android native toolchain
         run: sdkmanager "ndk;24.0.8215888" "cmake;3.22.1"
 
+      - name: Verify CapWin JNI exports
+        run: python3 tools/verify_capwin_jni_symbols.py
+
       - name: Build debug APK
         working-directory: app
         run: |
