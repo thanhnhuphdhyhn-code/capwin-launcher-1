@@ -25,8 +25,10 @@ import java.util.regex.Pattern;
 
 public abstract class ProcessHelper {
     private static final String TAG = "CapWinProcess";
+    private static final int MAX_RECENT_OUTPUT_LINES = 80;
     public enum PState {RUNNING, SLEEPING, WAITING, ZOMBIE, STOPPED, DEAD, OTHER}
     private static final ArrayList<Callback<String>> debugCallbacks = new ArrayList<>();
+    private static final ArrayList<String> recentOutput = new ArrayList<>();
     private static volatile String lastExecError = "";
     private static final byte SIGCONT = 18;
     private static final byte SIGSTOP = 19;
@@ -70,7 +72,7 @@ public abstract class ProcessHelper {
         lastExecError = "";
         try {
             ProcessBuilder processBuilder = (new ProcessBuilder(splitCommand(command))).directory(workingDir);
-            if (debugCallbacks.isEmpty()) processBuilder.redirectOutput(new File("/dev/null")).redirectErrorStream(true);
+            processBuilder.redirectErrorStream(true);
 
             Map<String, String> environment = processBuilder.environment();
             for (String name : envVars) environment.put(name, envVars.get(name));
@@ -81,10 +83,7 @@ public abstract class ProcessHelper {
             pid = pidField.getInt(process);
             pidField.setAccessible(false);
 
-            if (!debugCallbacks.isEmpty()) {
-                createDebugThread(process.getInputStream());
-                createDebugThread(process.getErrorStream());
-            }
+            createDebugThread(process.getInputStream());
 
             if (terminationCallback != null) createWaitForThread(process, terminationCallback);
         }
@@ -99,11 +98,27 @@ public abstract class ProcessHelper {
         return lastExecError;
     }
 
+    public static void clearRecentOutput() {
+        synchronized (recentOutput) {
+            recentOutput.clear();
+        }
+    }
+
+    public static String getRecentOutput() {
+        synchronized (recentOutput) {
+            return String.join("\n", recentOutput);
+        }
+    }
+
     private static void createDebugThread(final InputStream inputStream) {
         Executors.newSingleThreadExecutor().execute(() -> {
             try (BufferedReader reader = new BufferedReader(new InputStreamReader(inputStream))) {
                 String line;
                 while ((line = reader.readLine()) != null) {
+                    synchronized (recentOutput) {
+                        recentOutput.add(line);
+                        while (recentOutput.size() > MAX_RECENT_OUTPUT_LINES) recentOutput.remove(0);
+                    }
                     synchronized (debugCallbacks) {
                         if (!debugCallbacks.isEmpty()) {
                             for (Callback<String> callback : debugCallbacks) callback.call(line);

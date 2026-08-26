@@ -165,6 +165,7 @@ public class XServerDisplayActivity extends AppCompatActivity implements Navigat
 
         NavigationView navigationView = findViewById(R.id.NavigationView);
         ProcessHelper.removeAllDebugCallbacks();
+        ProcessHelper.clearRecentOutput();
         boolean enableLogs = preferences.getBoolean("enable_wine_debug", false) || preferences.getInt("box64_logs", 0) >= 1;
         if (enableLogs) ProcessHelper.addDebugCallback(debugDialog = new DebugDialog(this));
         Menu menu = navigationView.getMenu();
@@ -506,7 +507,7 @@ public class XServerDisplayActivity extends AppCompatActivity implements Navigat
 
         boolean enableWineDebug = preferences.getBoolean("enable_wine_debug", false);
         String wineDebugChannels = preferences.getString("wine_debug_channels", SettingsFragment.DEFAULT_WINE_DEBUG_CHANNELS);
-        envVars.put("WINEDEBUG", enableWineDebug && !wineDebugChannels.isEmpty() ? "+"+wineDebugChannels.replace(",", ",+") : "-all");
+        envVars.put("WINEDEBUG", enableWineDebug && !wineDebugChannels.isEmpty() ? "+"+wineDebugChannels.replace(",", ",+") : "+err");
 
         FileUtils.clear(rootFS.getTmpDir());
 
@@ -570,6 +571,8 @@ public class XServerDisplayActivity extends AppCompatActivity implements Navigat
                     : status == -1 && !processError.isEmpty()
                     ? " Box64 không thể khởi động: "+processError
                     : " Wine/Box64 đã dừng sớm (mã "+status+").";
+                String recentOutput = ProcessHelper.getRecentOutput();
+                if (!recentOutput.isEmpty()) detail += "\n\nLog Wine/Box64 gần nhất:\n"+recentOutput;
                 showStartupFailure("Desktop Windows chưa xuất hiện."+detail);
             }
             else runOnUiThread(this::exit);
