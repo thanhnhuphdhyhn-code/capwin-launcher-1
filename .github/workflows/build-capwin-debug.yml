@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
   push:
     branches:
-      - capwin-launcher
+      - main
 
 permissions:
   contents: read
