@@ -29,13 +29,18 @@ public class GuestProgramLauncherComponent extends EnvironmentComponent {
     private EnvVars envVars;
     private String box64Preset = Box64Preset.CONSERVATIVE;
     private Callback<Integer> terminationCallback;
+    private String startupError = "";
     private static final Object lock = new Object();
 
     @Override
     public void start() {
         synchronized (lock) {
             stop();
-            extractBox64File();
+            if (!extractBox64File()) {
+                pid = -1;
+                if (terminationCallback != null) terminationCallback.call(-1);
+                return;
+            }
             copyDefaultBox64RCFile();
             pid = execGuestProgram();
             if (pid == -1 && terminationCallback != null) terminationCallback.call(-1);
@@ -58,6 +63,10 @@ public class GuestProgramLauncherComponent extends EnvironmentComponent {
 
     public void setTerminationCallback(Callback<Integer> terminationCallback) {
         this.terminationCallback = terminationCallback;
+    }
+
+    public String getStartupError() {
+        return startupError;
     }
 
     public String getGuestExecutable() {
@@ -116,16 +125,26 @@ public class GuestProgramLauncherComponent extends EnvironmentComponent {
         });
     }
 
-    private void extractBox64File() {
+    private boolean extractBox64File() {
         Context context = environment.getContext();
+        RootFS rootFS = environment.getRootFS();
         SharedPreferences preferences = PreferenceManager.getDefaultSharedPreferences(context);
         String box64Version = preferences.getString("box64_version", DefaultVersion.BOX64);
         String currentBox64Version = preferences.getString("current_box64_version", "");
+        File box64File = new File(rootFS.getRootDir(), "/usr/local/bin/box64");
+        startupError = "";
 
-        if (!box64Version.equals(currentBox64Version)) {
+        if (!box64Version.equals(currentBox64Version) || !box64File.isFile()) {
             GeneralComponents.extractFile(GeneralComponents.Type.BOX64, context, box64Version, DefaultVersion.BOX64);
+            if (!box64File.isFile()) {
+                startupError = "Không thể giải nén Box64 vào "+box64File.getPath();
+                preferences.edit().remove("current_box64_version").apply();
+                return false;
+            }
+            FileUtils.chmod(box64File, 0755);
             preferences.edit().putString("current_box64_version", box64Version).apply();
         }
+        return true;
     }
 
     private void copyDefaultBox64RCFile() {

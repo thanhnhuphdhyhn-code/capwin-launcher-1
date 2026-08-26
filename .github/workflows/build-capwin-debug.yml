@@ -42,6 +42,7 @@ jobs:
         run: |
           grep -q "STARTUP_TIMEOUT_MS" app/app/src/main/java/com/capwin/launcher/XServerDisplayActivity.java
           grep -q "getLastExecError" app/app/src/main/java/com/capwin/launcher/core/ProcessHelper.java
+          grep -q "box64File.isFile" app/app/src/main/java/com/capwin/launcher/xenvironment/components/GuestProgramLauncherComponent.java
 
       - name: Build debug APK
         working-directory: app

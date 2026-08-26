@@ -563,8 +563,11 @@ public class XServerDisplayActivity extends AppCompatActivity implements Navigat
         guestProgramLauncherComponent.setEnvVars(envVars);
         guestProgramLauncherComponent.setTerminationCallback((status) -> {
             if (!desktopReady) {
+                String startupError = guestProgramLauncherComponent.getStartupError();
                 String processError = ProcessHelper.getLastExecError();
-                String detail = status == -1 && !processError.isEmpty()
+                String detail = !startupError.isEmpty()
+                    ? " "+startupError
+                    : status == -1 && !processError.isEmpty()
                     ? " Box64 không thể khởi động: "+processError
                     : " Wine/Box64 đã dừng sớm (mã "+status+").";
                 showStartupFailure("Desktop Windows chưa xuất hiện."+detail);
