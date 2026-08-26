@@ -2,6 +2,7 @@ package com.capwin.launcher.core;
 
 import android.os.Process;
 import android.system.Os;
+import android.util.Log;
 
 import androidx.annotation.NonNull;
 
@@ -23,8 +24,10 @@ import java.util.concurrent.Executors;
 import java.util.regex.Pattern;
 
 public abstract class ProcessHelper {
+    private static final String TAG = "CapWinProcess";
     public enum PState {RUNNING, SLEEPING, WAITING, ZOMBIE, STOPPED, DEAD, OTHER}
     private static final ArrayList<Callback<String>> debugCallbacks = new ArrayList<>();
+    private static volatile String lastExecError = "";
     private static final byte SIGCONT = 18;
     private static final byte SIGSTOP = 19;
 
@@ -64,6 +67,7 @@ public abstract class ProcessHelper {
 
     public static int exec(String command, EnvVars envVars, File workingDir, Callback<Integer> terminationCallback) {
         int pid = -1;
+        lastExecError = "";
         try {
             ProcessBuilder processBuilder = (new ProcessBuilder(splitCommand(command))).directory(workingDir);
             if (debugCallbacks.isEmpty()) processBuilder.redirectOutput(new File("/dev/null")).redirectErrorStream(true);
@@ -84,8 +88,15 @@ public abstract class ProcessHelper {
 
             if (terminationCallback != null) createWaitForThread(process, terminationCallback);
         }
-        catch (Exception e) {}
+        catch (Exception e) {
+            lastExecError = e.getClass().getSimpleName()+": "+e.getMessage();
+            Log.e(TAG, "Unable to start native process: "+command, e);
+        }
         return pid;
+    }
+
+    public static String getLastExecError() {
+        return lastExecError;
     }
 
     private static void createDebugThread(final InputStream inputStream) {

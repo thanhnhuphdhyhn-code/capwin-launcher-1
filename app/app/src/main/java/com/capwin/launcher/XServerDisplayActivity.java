@@ -8,6 +8,9 @@ import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
 import android.os.Bundle;
+import android.os.Handler;
+import android.os.Looper;
+import android.util.Log;
 import android.view.KeyEvent;
 import android.view.Menu;
 import android.view.MenuItem;
@@ -21,6 +24,7 @@ import android.widget.Spinner;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.appcompat.app.AppCompatActivity;
+import androidx.appcompat.app.AlertDialog;
 import androidx.core.view.GravityCompat;
 import androidx.drawerlayout.widget.DrawerLayout;
 import androidx.preference.PreferenceManager;
@@ -101,6 +105,8 @@ import java.util.Iterator;
 import java.util.concurrent.Executors;
 
 public class XServerDisplayActivity extends AppCompatActivity implements NavigationView.OnNavigationItemSelectedListener {
+    private static final String TAG = "CapWinStartup";
+    private static final long STARTUP_TIMEOUT_MS = 45000;
     private XServerView xServerView;
     private InputControlsView inputControlsView;
     private TouchpadView touchpadView;
@@ -134,6 +140,11 @@ public class XServerDisplayActivity extends AppCompatActivity implements Navigat
     public int frameRatingWindowId = -1;
     private Win32AppWorkarounds win32AppWorkarounds;
     private String screenEffectProfile;
+    private PreloaderDialog preloaderDialog;
+    private final Handler startupHandler = new Handler(Looper.getMainLooper());
+    private Runnable startupTimeoutCallback;
+    private boolean desktopReady = false;
+    private boolean startupFailureShown = false;
 
     @Override
     public void onCreate(Bundle savedInstanceState) {
@@ -143,7 +154,7 @@ public class XServerDisplayActivity extends AppCompatActivity implements Navigat
         AppUtils.keepScreenOn(this);
         setContentView(R.layout.xserver_display_activity);
 
-        final PreloaderDialog preloaderDialog = new PreloaderDialog(this);
+        preloaderDialog = new PreloaderDialog(this);
         preferences = PreferenceManager.getDefaultSharedPreferences(this);
         boolean useAndroidClipboardOnWine = preferences.getBoolean("use_android_clipboard_on_wine", false);
         clipboardManager = useAndroidClipboardOnWine ? (ClipboardManager)getSystemService(CLIPBOARD_SERVICE) : null;
@@ -244,6 +255,8 @@ public class XServerDisplayActivity extends AppCompatActivity implements Navigat
                 if (!flags[0] && window.isRenderable() && !window.getClassName().isEmpty()) {
                     xServerView.getRenderer().setCursorVisible(true);
                     preloaderDialog.closeOnUiThread();
+                    desktopReady = true;
+                    cancelStartupTimeout();
                     flags[0] = true;
                 }
 
@@ -264,13 +277,21 @@ public class XServerDisplayActivity extends AppCompatActivity implements Navigat
 
         setupUI();
 
+        scheduleStartupTimeout();
+
         Executors.newSingleThreadExecutor().execute(() -> {
-            if (!isGenerateWineprefix()) {
-                setupWineSystemFiles();
-                extractGraphicsDriverFiles();
-                changeWineAudioDriver();
+            try {
+                if (!isGenerateWineprefix()) {
+                    setupWineSystemFiles();
+                    extractGraphicsDriverFiles();
+                    changeWineAudioDriver();
+                }
+                setupXEnvironment();
             }
-            setupXEnvironment();
+            catch (Throwable error) {
+                Log.e(TAG, "Container startup failed before Wine desktop was mapped", error);
+                showStartupFailure("Không thể chuẩn bị môi trường Windows: "+error.getClass().getSimpleName()+". Hãy thử tạo lại container hoặc gửi log startup.");
+            }
         });
     }
 
@@ -326,6 +347,7 @@ public class XServerDisplayActivity extends AppCompatActivity implements Navigat
 
     @Override
     protected void onDestroy() {
+        cancelStartupTimeout();
         winHandler.stop();
         if (environment != null) environment.stopEnvironmentComponents();
         super.onDestroy();
@@ -539,7 +561,16 @@ public class XServerDisplayActivity extends AppCompatActivity implements Navigat
         }
 
         guestProgramLauncherComponent.setEnvVars(envVars);
-        guestProgramLauncherComponent.setTerminationCallback((status) -> exit());
+        guestProgramLauncherComponent.setTerminationCallback((status) -> {
+            if (!desktopReady) {
+                String processError = ProcessHelper.getLastExecError();
+                String detail = status == -1 && !processError.isEmpty()
+                    ? " Box64 không thể khởi động: "+processError
+                    : " Wine/Box64 đã dừng sớm (mã "+status+").";
+                showStartupFailure("Desktop Windows chưa xuất hiện."+detail);
+            }
+            else runOnUiThread(this::exit);
+        });
         environment.addComponent(guestProgramLauncherComponent);
 
         if (isGenerateWineprefix()) {
@@ -560,6 +591,37 @@ public class XServerDisplayActivity extends AppCompatActivity implements Navigat
         audioDriver = null;
         audioDriverConfig = null;
         wincomponents = null;
+    }
+
+    private void scheduleStartupTimeout() {
+        cancelStartupTimeout();
+        startupTimeoutCallback = () -> {
+            if (!desktopReady) {
+                showStartupFailure("Không nhận được desktop Windows sau 45 giây. Hãy thử tạo lại container với Turnip + DXVK hoặc gửi log startup.");
+            }
+        };
+        startupHandler.postDelayed(startupTimeoutCallback, STARTUP_TIMEOUT_MS);
+    }
+
+    private void cancelStartupTimeout() {
+        if (startupTimeoutCallback != null) {
+            startupHandler.removeCallbacks(startupTimeoutCallback);
+            startupTimeoutCallback = null;
+        }
+    }
+
+    private void showStartupFailure(String message) {
+        runOnUiThread(() -> {
+            if (desktopReady || startupFailureShown || isFinishing() || isDestroyed()) return;
+            startupFailureShown = true;
+            cancelStartupTimeout();
+            if (preloaderDialog != null) preloaderDialog.close();
+            new AlertDialog.Builder(this)
+                .setTitle("CapWin không thể khởi động")
+                .setMessage(message)
+                .setPositiveButton("Quay lại", (dialog, which) -> finish())
+                .show();
+        });
     }
 
     private void setupUI() {

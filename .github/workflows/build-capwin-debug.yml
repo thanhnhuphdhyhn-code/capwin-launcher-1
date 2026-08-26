@@ -38,6 +38,11 @@ jobs:
       - name: Verify CapWin JNI exports
         run: python3 tools/verify_capwin_jni_symbols.py
 
+      - name: Verify startup diagnostics are present
+        run: |
+          grep -q "STARTUP_TIMEOUT_MS" app/app/src/main/java/com/capwin/launcher/XServerDisplayActivity.java
+          grep -q "getLastExecError" app/app/src/main/java/com/capwin/launcher/core/ProcessHelper.java
+
       - name: Build debug APK
         working-directory: app
         run: |

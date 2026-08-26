@@ -38,6 +38,7 @@ public class GuestProgramLauncherComponent extends EnvironmentComponent {
             extractBox64File();
             copyDefaultBox64RCFile();
             pid = execGuestProgram();
+            if (pid == -1 && terminationCallback != null) terminationCallback.call(-1);
         }
     }
 
