@@ -1,0 +1,7 @@
+package com.capwin.launcher.xserver.errors;
+
+public class BadAtom extends XRequestError {
+    public BadAtom(int id) {
+        super(5, id);
+    }
+}
